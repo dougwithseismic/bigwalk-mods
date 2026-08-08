@@ -8,14 +8,23 @@ it, and the reverse-engineering findings behind these mods.
 ## Quick start
 
 ```powershell
-.\scripts\install.ps1          # BepInEx loader (first launch takes minutes - it generates interop)
-.\scripts\build.ps1 -Deploy    # build plugins and copy them in
-.\scripts\package.ps1          # build Thunderstore zips into dist\
-.\scripts\uninstall.ps1        # full revert to vanilla
+.\scripts\install.ps1              # BepInEx loader (first launch takes minutes - it generates interop)
+.\scripts\build.ps1 -Deploy        # build plugins and copy them in
+.\scripts\new-mod.ps1 -Name Thing  # scaffold a new plugin and add it to the solution
+.\scripts\package.ps1              # build Thunderstore zips into dist\
+.\scripts\uninstall.ps1            # full revert to vanilla
 ```
 
 Install and uninstall refuse to run while the game is open, and locate Big Walk by parsing
 Steam's `libraryfolders.vdf`. Override with `$env:BIGWALK_PATH`.
+
+The loader is **BepInEx 6.0.755** — the Thunderstore `BepInExPack_IL2CPP` that every Big Walk
+mod depends on, so we develop against exactly what users run. See
+**[docs/publishing.md](docs/publishing.md)** for releasing to Thunderstore.
+
+Shared build settings (target framework, all game/loader references) live in
+`plugins\Directory.Build.props`, so each plugin's csproj is only a name, version and
+description.
 
 ## Plugins
 
@@ -59,10 +68,10 @@ Icons are generated placeholders — replace them with real art before publishin
 
 | Piece | State |
 | --- | --- |
-| BepInEx 6 BE (IL2CPP) on Unity 6.3 / metadata v39 | **Working** — 154 interop assemblies |
-| `install` / `uninstall` / `build` / `package` scripts | Working |
-| `BigWalk.SkipIntro` | Mic check **confirmed working in game**; splash patch built, untested |
-| `BigWalk.DevMenu` | Cheat menu **confirmed working in game**; merged + retabbed, untested |
+| BepInEx **6.0.755** (Thunderstore pack) on Unity 6.3 / metadata v39 | **Working** |
+| `install` / `uninstall` / `build` / `package` / `new-mod` scripts | Working |
+| `BigWalk.SkipIntro` | **Both skips confirmed in game on 6.0.755.** Packaged, ready to publish |
+| `BigWalk.DevMenu` | Loads on 6.0.755. Internal tool — not for release |
 | Proximity range increase | Blocked on route A vs B (see guide §4) |
 
 ## Ideas backlog
