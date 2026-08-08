@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Epic.OnlineServices.Lobby;
+using UnityEngine;
 
 using Il2CppLobbyList = Il2CppSystem.Collections.Generic.List<LobbyInfo>;
 using Il2CppSearchTask = Il2CppSystem.Threading.Tasks.Task<Il2CppSystem.Collections.Generic.List<LobbyInfo>>;
@@ -8,40 +9,60 @@ using Il2CppSearchTask = Il2CppSystem.Threading.Tasks.Task<Il2CppSystem.Collecti
 namespace BigWalk.PublicLobbies;
 
 /// <summary>
-/// Wraps the game's own EOS lobby search so we can ask for more than the stock
-/// browser does, and turns the raw results into deduped <see cref="LobbyEntry"/>.
+/// Runs the game's own EOS lobby search and turns the results into deduplicated
+/// <see cref="LobbyEntry"/>.
 ///
-/// Two things make the raw result list unsuitable for direct display:
+/// Three things make a single call unsuitable:
 ///
-///   * Big Walk advertises a lobby per *player*, not per world. A member's record
-///     has MaxMembers==1 and IsHost==false, and carries the world owner's name in
-///     the WorldOwner* fields. Showing those verbatim gives a list of phantom
-///     one-slot lobbies that duplicate the real worlds behind them.
-///   * FindPublicLobbies() passes a small fixed result cap, so a busy evening gets
-///     truncated well before EOS runs out of lobbies to return.
+///   * EOS returns a varying *subset* of matching lobbies per search, not a stable
+///     page. One query therefore never sees the whole population, and repeating it
+///     returns a different sample - which is why the room count drifts between
+///     refreshes even when nothing has opened or closed. The fix is to run several
+///     searches and union the results.
+///   * Big Walk advertises a lobby per *player*, not per world. A member's record has
+///     MaxMembers==1 and IsHost==false and carries the world owner in its WorldOwner*
+///     fields, so showing results verbatim gives a list of phantom one-slot rooms.
+///   * FindPublicLobbies() passes a small fixed result cap.
 /// </summary>
 public sealed class LobbySearchService
 {
     /// <summary>EOS_LOBBY_MAX_SEARCH_RESULTS - the SDK rejects anything larger.</summary>
     public const uint MaxSearchResults = 200;
 
-    private Il2CppSearchTask _pending;
+    /// <summary>
+    /// Concurrent searches in flight. EOS rate-limits per client, and a throttled
+    /// search returns nothing - which looks exactly like an empty lobby list.
+    /// </summary>
+    private const int MaxConcurrent = 8;
+
+    /// <summary>Give up on stragglers rather than leaving the UI searching forever.</summary>
+    private const float TimeoutSeconds = 20f;
+
+    private readonly List<Il2CppSearchTask> _inFlight = new();
+    private readonly Dictionary<string, LobbyEntry> _union =
+        new(StringComparer.OrdinalIgnoreCase);
+
     private Action<List<LobbyEntry>> _onDone;
     private Action<string> _onError;
 
-    public bool IsSearching => _pending != null;
+    private int _roundsTotal;
+    private int _roundsStarted;
+    private int _roundsCompleted;
+    private uint _maxResults;
+    private float _deadline;
+    private bool _reportedFirst;
+
+    public bool IsSearching { get; private set; }
 
     /// <summary>
     /// The filter predicate FindPublicLobbies() feeds to its LobbySearch. It is a
     /// compiler-cached lambda, so it only exists once the game has run that path at
-    /// least this session; we prime it by calling FindPublicLobbies() once.
-    /// Reusing it means our search matches vanilla's semantics exactly - we are
-    /// only overriding how many results come back.
+    /// least once this session. Reusing it means our searches match vanilla's
+    /// semantics exactly - we only override how many results come back, and how often.
     /// </summary>
     private static Il2CppSystem.Action<LobbySearch> PublicFilter =>
         EOSLobbyManager.__c.__9__51_0;
 
-    /// <summary>False until the game has run FindPublicLobbies() at least once.</summary>
     public static bool FilterIsCached
     {
         get
@@ -51,121 +72,162 @@ public sealed class LobbySearchService
         }
     }
 
-    public bool Begin(uint maxResults, Action<List<LobbyEntry>> onDone, Action<string> onError)
+    public bool Begin(uint maxResults, int rounds, Action<List<LobbyEntry>> onDone, Action<string> onError)
     {
-        if (_pending != null) return false;
+        if (IsSearching) return false;
 
         _onDone = onDone;
         _onError = onError;
+        _maxResults = Math.Min(maxResults, MaxSearchResults);
+        _roundsTotal = Mathf.Clamp(rounds, 1, 30);
+        _roundsStarted = 0;
+        _roundsCompleted = 0;
+        _reportedFirst = false;
+        _deadline = Time.unscaledTime + TimeoutSeconds;
 
-        var mgr = EOSLobbyManager.Instance;
-        if (mgr == null)
+        _union.Clear();
+        _inFlight.Clear();
+
+        if (EOSLobbyManager.Instance == null)
         {
             Fail("EOSLobbyManager.Instance is null - EOS has not finished initialising.");
             return false;
         }
 
-        try
-        {
-            var filter = PublicFilter;
-            if (filter == null)
-            {
-                // Cold start: prime the cached lambda. This search is the stock one
-                // (small cap), but its results are still perfectly good, and every
-                // subsequent search can use the wider cap.
-                Plugin.Trace.LogInfo("Public filter not cached yet; priming via FindPublicLobbies().");
-                _pending = mgr.FindPublicLobbies();
-            }
-            else
-            {
-                _pending = mgr.FindLobbies(Math.Min(maxResults, MaxSearchResults), filter);
-            }
-
-            if (_pending == null)
-            {
-                Fail("Lobby search returned a null task.");
-                return false;
-            }
-        }
-        catch (Exception e)
-        {
-            Fail($"Lobby search threw: {e.Message}");
-            return false;
-        }
-
+        IsSearching = true;
         return true;
     }
 
-    /// <summary>Call every frame; completes the search when EOS is done.</summary>
+    /// <summary>Call every frame: starts rounds and harvests completed ones.</summary>
     public void Pump()
     {
-        if (_pending == null || !_pending.IsCompleted) return;
-
-        var task = _pending;
-        _pending = null;
+        if (!IsSearching) return;
 
         try
         {
-            if (task.IsFaulted)
-            {
-                Fail($"Search faulted: {task.Exception?.Message}");
-                return;
-            }
+            StartRounds();
+            HarvestCompleted();
 
-            _onDone?.Invoke(Project(task.Result));
+            bool done = _roundsCompleted >= _roundsTotal && _inFlight.Count == 0;
+            bool timedOut = Time.unscaledTime >= _deadline;
+
+            if (done || timedOut)
+            {
+                if (timedOut && !done)
+                    Plugin.Trace.LogWarning(
+                        $"Lobby search timed out with {_roundsCompleted}/{_roundsTotal} rounds done; " +
+                        $"showing {_union.Count} rooms found so far.");
+
+                Finish();
+            }
         }
         catch (Exception e)
         {
-            Fail($"Reading search results threw: {e.Message}");
+            Fail($"Lobby search failed: {e.Message}");
+            Finish();
         }
     }
+
+    /// <summary>
+    /// One new search per frame, up to the concurrency cap. Staggering them matters:
+    /// firing every round at once is the reliable way to get rate-limited.
+    /// </summary>
+    private void StartRounds()
+    {
+        if (_roundsStarted >= _roundsTotal) return;
+        if (_inFlight.Count >= MaxConcurrent) return;
+
+        var mgr = EOSLobbyManager.Instance;
+        if (mgr == null) return;
+
+        Il2CppSearchTask task;
+
+        var filter = PublicFilter;
+        if (filter == null)
+        {
+            // Cold start: the cached lambda only exists after the game has run this
+            // path once. Prime it - those results are still perfectly good, just
+            // capped lower - and every later round uses the wider search.
+            task = mgr.FindPublicLobbies();
+        }
+        else
+        {
+            task = mgr.FindLobbies(_maxResults, filter);
+        }
+
+        if (task == null)
+        {
+            _roundsCompleted++;
+            return;
+        }
+
+        _inFlight.Add(task);
+        _roundsStarted++;
+    }
+
+    private void HarvestCompleted()
+    {
+        for (int i = _inFlight.Count - 1; i >= 0; i--)
+        {
+            var task = _inFlight[i];
+            if (task == null) { _inFlight.RemoveAt(i); _roundsCompleted++; continue; }
+            if (!task.IsCompleted) continue;
+
+            _inFlight.RemoveAt(i);
+            _roundsCompleted++;
+
+            if (task.IsFaulted) continue;
+
+            try { Merge(task.Result); }
+            catch (Exception e) { Plugin.Trace.LogWarning($"Reading a search round failed: {e.Message}"); }
+        }
+
+        // Show the first round immediately rather than making the player wait for
+        // every round to land; later rounds only ever add rooms.
+        if (!_reportedFirst && _union.Count > 0)
+        {
+            _reportedFirst = true;
+            _onDone?.Invoke(Snapshot());
+        }
+    }
+
+    private void Finish()
+    {
+        IsSearching = false;
+        _inFlight.Clear();
+        _onDone?.Invoke(Snapshot());
+    }
+
+    private List<LobbyEntry> Snapshot() => new(_union.Values);
 
     private void Fail(string message)
     {
         Plugin.Trace.LogWarning(message);
+        IsSearching = false;
         _onError?.Invoke(message);
     }
 
     // --------------------------------------------------------------- projection
 
     /// <summary>
-    /// Collapses the raw per-player records into one entry per world.
-    ///
-    /// Records are keyed by join code, which is the world's identity. A host record
-    /// always wins over a member record, because only the host's carries the real
-    /// member counts; member records exist purely so friends can find each other.
+    /// Folds one round's results into the union, keyed by join code - the world's
+    /// identity. A host record always beats a member record, because only the host's
+    /// carries real member counts.
     /// </summary>
-    public static List<LobbyEntry> Project(Il2CppLobbyList raw)
+    private void Merge(Il2CppLobbyList raw)
     {
-        var byCode = new Dictionary<string, LobbyEntry>(StringComparer.OrdinalIgnoreCase);
-        var anonymous = new List<LobbyEntry>();
-
-        if (raw == null) return anonymous;
+        if (raw == null) return;
 
         for (int i = 0; i < raw.Count; i++)
         {
             var entry = Convert(raw[i]);
-            if (entry == null) continue;
+            if (entry == null || string.IsNullOrEmpty(entry.JoinCode)) continue;
 
-            if (string.IsNullOrEmpty(entry.JoinCode))
-            {
-                // No code means nothing to join and nothing to dedupe on; keep it
-                // out of the map rather than letting "" collapse unrelated worlds.
-                anonymous.Add(entry);
-                continue;
-            }
-
-            if (!byCode.TryGetValue(entry.JoinCode, out var existing) || Prefer(entry, existing))
-                byCode[entry.JoinCode] = entry;
+            if (!_union.TryGetValue(entry.JoinCode, out var existing) || Prefer(entry, existing))
+                _union[entry.JoinCode] = entry;
         }
-
-        var result = new List<LobbyEntry>(byCode.Count + anonymous.Count);
-        result.AddRange(byCode.Values);
-        result.AddRange(anonymous);
-        return result;
     }
 
-    /// <summary>True if <paramref name="candidate"/> is the better record for a world.</summary>
     private static bool Prefer(LobbyEntry candidate, LobbyEntry existing)
     {
         if (candidate.IsHostRecord != existing.IsHostRecord) return candidate.IsHostRecord;
@@ -220,9 +282,8 @@ public sealed class LobbySearchService
                 PubliclyAdvertised = advertised,
             };
         }
-        catch (Exception e)
+        catch
         {
-            Plugin.Trace.LogWarning($"Skipping unreadable lobby: {e.Message}");
             return null;
         }
     }

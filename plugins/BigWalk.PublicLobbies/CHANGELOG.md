@@ -15,8 +15,9 @@ First release.
 
 Known limitations, documented rather than hidden:
 
-- A single search returns a varying subset of lobbies, so the list is not guaranteed
-  complete. Refresh to resample.
+- Coverage is best-effort. EOS samples rather than pages, so a refresh runs several
+  searches and unions them; more rounds find more rooms, but completeness is never
+  guaranteed.
 - Password-protected worlds cannot be identified from the list — the password is checked
   after connecting, and is not published as lobby data.
 - Ping is not shown because the game's networking SDK exposes no latency API.

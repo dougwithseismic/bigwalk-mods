@@ -104,7 +104,6 @@ public sealed class NativeLobbyBrowser
             if (!visible) return;
 
             UpdateChrome();
-            DetectScrollReset();
             HandleScrollWheel();
         }
         catch (Exception e)
@@ -119,15 +118,7 @@ public sealed class NativeLobbyBrowser
 
     private bool _reportedTickError;
 
-    private float _expectedScrollY;
-    private bool _scrollApplied;
-    private bool _reportedReset;
 
-    /// <summary>
-    /// If the list refuses to move, the interesting question is whether our offset is
-    /// never applied or applied and then overwritten - HouseScroller.Update could be
-    /// restoring its own position every frame. This reports which, once.
-    /// </summary>
     /// <summary>
     /// The real height of the list.
     ///
@@ -189,21 +180,6 @@ public sealed class NativeLobbyBrowser
     /// <summary>Viewport is the masked parent, never HouseScroller.rectTransform - that field is null here.</summary>
     private RectTransform Viewport => _anchor == null ? null : AsRect(_anchor.parent);
 
-    private void DetectScrollReset()
-    {
-        if (!_scrollApplied || _reportedReset) return;
-
-        var content = AsRect(_anchor);
-        if (content == null) return;
-
-        float actual = content.anchoredPosition.y;
-        if (Mathf.Abs(actual - _expectedScrollY) < 1f) return;
-
-        _reportedReset = true;
-        Plugin.Trace.LogWarning(
-            $"Scroll offset was overwritten: expected y={_expectedScrollY:0}, found {actual:0}. " +
-            "Something else (most likely HouseScroller.Update) owns this transform.");
-    }
 
     /// <summary>
     /// HouseScroller only advances on menu selection and hover thresholds, which a
@@ -222,7 +198,7 @@ public sealed class NativeLobbyBrowser
         catch { return; }
 
         if (Mathf.Abs(wheel) < 0.01f) return;
-        ScrollBy(-wheel * Plugin.Instance.ScrollSpeed.Value, "wheel");
+        ScrollBy(-wheel * Plugin.Instance.ScrollSpeed.Value);
     }
 
     /// <summary>
@@ -231,14 +207,14 @@ public sealed class NativeLobbyBrowser
     /// numbers here say whether the content is measured as too short, the viewport is
     /// wrong, or the offset is being applied and then reverted.
     /// </summary>
-    private void ScrollBy(float delta, string source)
+    private void ScrollBy(float delta)
     {
         var content = AsRect(_anchor);
         var viewport = Viewport;
 
         if (content == null || viewport == null)
         {
-            Plugin.Trace.LogWarning($"Scroll[{source}]: content or viewport missing.");
+            Plugin.Trace.LogWarning("Scroll: content or viewport missing.");
             return;
         }
 
@@ -251,7 +227,7 @@ public sealed class NativeLobbyBrowser
         }
         catch (Exception e)
         {
-            Plugin.Trace.LogWarning($"Scroll[{source}] failed: {e.Message}");
+            Plugin.Trace.LogWarning($"Scroll failed: {e.Message}");
         }
     }
 
@@ -266,8 +242,6 @@ public sealed class NativeLobbyBrowser
     {
         var pos = content.anchoredPosition;
         content.anchoredPosition = new Vector2(pos.x, _scrollY);
-        _expectedScrollY = _scrollY;
-        _scrollApplied = true;
     }
 
     /// <summary>Re-clamps and re-applies after the row set changes.</summary>
@@ -552,11 +526,9 @@ public sealed class NativeLobbyBrowser
         _controls = NewRow("Controls");
         if (_controls == null) return;
 
-        _refreshLabel = AddButton("Refresh", () =>
-        {
-            if (!_refresh.RequestManual())
-                Plugin.Trace.LogInfo($"Refresh on cooldown ({_refresh.CooldownRemaining:0.0}s).");
-        });
+        // The button label already counts the cooldown down, so a refused click needs
+        // no log line - it is visible on screen.
+        _refreshLabel = AddButton("Refresh", () => _refresh.RequestManual());
 
         _sortLabel = AddButton("Sort", () =>
         {
@@ -576,8 +548,8 @@ public sealed class NativeLobbyBrowser
             Rebuild();
         });
 
-        AddButton("Up", () => ScrollBy(-PageSize(), "button"));
-        AddButton("Down", () => ScrollBy(PageSize(), "button"));
+        AddButton("Up", () => ScrollBy(-PageSize()));
+        AddButton("Down", () => ScrollBy(PageSize()));
     }
 
     private float ButtonHeight()
@@ -599,13 +571,7 @@ public sealed class NativeLobbyBrowser
         fit.preferredWidth = -1f;
         fit.preferredHeight = ButtonHeight();
 
-        Wire(clone.GetComponent<Button>(),
-             () =>
-             {
-                 Plugin.Trace.LogInfo($"Clicked '{name}'.");
-                 onClick();
-             },
-             name);
+        Wire(clone.GetComponent<Button>(), onClick);
 
         if (Plugin.Instance.CompactRows.Value)
             ScaleAllText(clone, Mathf.Clamp(Plugin.Instance.RowScale.Value, 0.3f, 1f));
@@ -642,13 +608,9 @@ public sealed class NativeLobbyBrowser
     /// Also guarantees a raycast target: a button whose graphic does not take
     /// raycasts never receives a pointer event in the first place.
     /// </summary>
-    private static void Wire(Button button, Action onClick, string label = null)
+    private static void Wire(Button button, Action onClick)
     {
-        if (button == null)
-        {
-            Plugin.Trace.LogWarning($"Wire({label}): no Button component.");
-            return;
-        }
+        if (button == null) return;
 
         button.interactable = true;
 
@@ -678,11 +640,6 @@ public sealed class NativeLobbyBrowser
             button.targetGraphic = image;
         }
 
-        if (label != null)
-            Plugin.Trace.LogInfo(
-                $"Wire({label}): persistent={persistent} silenced " +
-                $"image={(image != null ? image.name : "MISSING")} " +
-                $"interactable={button.interactable}");
     }
 
     /// <summary>
@@ -788,10 +745,6 @@ public sealed class NativeLobbyBrowser
             float overflow = ContentHeight(content) - viewport.rect.height;
             int needed = overflow <= 0f ? 0 : Mathf.CeilToInt(overflow / step);
 
-            Plugin.Trace.LogInfo(
-                $"Scroll range: content={ContentHeight(content):0} viewport={viewport.rect.height:0} " +
-                $"step={step:0.0} needed={needed} maxSteps={scroller.maxSteps} " +
-                $"currentStep={scroller.currentStep} container={(scroller.containerTransform == null ? "null" : scroller.containerTransform.name)}");
 
             if (needed > scroller.maxSteps)
                 scroller.maxSteps = needed;

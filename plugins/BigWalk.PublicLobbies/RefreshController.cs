@@ -84,44 +84,27 @@ public sealed class RefreshController
         Begin();
     }
 
-    /// <summary>
-    /// Set when a search ran only to populate the game's cached search filter. That
-    /// first search uses the stock (small) result cap, so the wide one is queued to
-    /// follow it immediately rather than waiting for the auto-refresh interval.
-    /// </summary>
-    private bool _primed;
-
     private void Begin()
     {
         // Stamp the time up front: a search that fails to start still counts, or a
         // persistent failure becomes a tight retry loop.
         _lastSearchAt = _now;
 
-        bool wasPrimed = LobbySearchService.FilterIsCached;
-
         _search.Begin(
             Plugin.Instance?.MaxResults?.Value ?? LobbySearchService.MaxSearchResults,
+            Plugin.Instance?.SearchRounds?.Value ?? 12,
             OnResults,
             OnError);
-
-        // If that call had to prime the cached filter, its results came from the
-        // stock search and are capped well below what we asked for.
-        _primed = !wasPrimed;
     }
 
     private void OnResults(List<LobbyEntry> entries)
     {
+        // Fired once when the first round lands and again when every round is in, so
+        // the list appears quickly and then fills out.
         HasSearched = true;
         LastError = null;
         _model.SetResults(entries);
         Updated?.Invoke();
-
-        if (_primed && LobbySearchService.FilterIsCached)
-        {
-            _primed = false;
-            Plugin.Trace.LogInfo("Filter cached; re-running the search at the full result cap.");
-            Begin();
-        }
     }
 
     private void OnError(string message)

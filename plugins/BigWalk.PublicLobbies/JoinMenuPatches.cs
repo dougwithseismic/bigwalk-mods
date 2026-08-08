@@ -11,11 +11,8 @@ internal static class JoinMenuPatches
 {
     [HarmonyPostfix]
     [HarmonyPatch(nameof(JoinMenu.OnEnable))]
-    private static void OnEnable(JoinMenu __instance)
-    {
-        if (!Plugin.Instance.EnableNativeSection.Value) return;
+    private static void OnEnable(JoinMenu __instance) =>
         Plugin.Browser?.Attach(__instance);
-    }
 
     [HarmonyPostfix]
     [HarmonyPatch(nameof(JoinMenu.OnDisable))]

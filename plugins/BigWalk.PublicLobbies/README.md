@@ -29,6 +29,10 @@ quietest, world, host), hiding full rooms, and filtering to crossplay only.
 - **The list is deduplicated.** Big Walk advertises a lobby per *player*, not per world,
   so roughly two thirds of raw search results are one-slot records that duplicate the
   world behind them. Rows are collapsed by join code, preferring the host's record.
+- **A refresh runs several searches.** EOS returns a varying subset of matching lobbies
+  per query rather than a stable page, so one search never sees every room. A refresh
+  runs `SearchRounds` of them and unions the results; the list appears as soon as the
+  first round lands and fills out as the rest arrive.
 
 ## Configuration
 
@@ -36,25 +40,17 @@ quietest, world, host), hiding full rooms, and filtering to crossplay only.
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
-| `MaxResults` | 200 | Result cap. 200 is `EOS_LOBBY_MAX_SEARCH_RESULTS`; the SDK rejects more. |
+| `MaxResults` | 200 | Per-search result cap. 200 is `EOS_LOBBY_MAX_SEARCH_RESULTS`; the SDK rejects more. |
+| `SearchRounds` | 12 | Searches per refresh, unioned together. Past roughly 30, EOS rate-limits and returns nothing new. |
 | `CompactRows` / `RowScale` | true / 0.5 | Scales rows down from friends-card size so more fit on screen. |
 | `ScrollSpeed` | 120 | Pixels per wheel notch. |
-| `EnableNativeSection` | true | The in-menu list. |
-| `EnableOverlay` | false | Standalone IMGUI browser on `BrowserKey`. Off by default — see below. |
-
-Diagnostics: **F7** dumps every field and attribute of every lobby found, **F8** dumps the
-JoinMenu widget tree, **F9** runs a wide search and reports the deduplicated world list.
 
 ## Status
 
 Working: discovery, dedupe, player counts, search, sort, filters, scrolling, joining.
 
-Known gaps:
-
-- **Coverage.** EOS returns a varying subset per search rather than a stable page, so a
-  single query does not see every lobby. The fix is to union several concurrent searches.
-- **The IMGUI overlay crashes** (`0xC0000005`) and is disabled by default; the native
-  section is the supported path.
+Coverage is best-effort rather than guaranteed: because EOS samples rather than pages,
+more rounds find more rooms, but no number of rounds proves the list is complete.
 
 ## Install
 
