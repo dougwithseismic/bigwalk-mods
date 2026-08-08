@@ -12,7 +12,7 @@ namespace BigWalk.DevMenu;
 /// nothing constructs DevMenuRow). This plugin supplies a new front end for the
 /// parts that survived, plus proximity-voice diagnostics.
 /// </summary>
-[BepInPlugin(Guid, "Big Walk — Dev Menu", "0.3.0")]
+[BepInPlugin(Guid, "Big Walk — Dev Menu", "0.4.0")]
 public class Plugin : BasePlugin
 {
     public const string Guid = "com.bigwalk.devmenu";
@@ -23,6 +23,7 @@ public class Plugin : BasePlugin
     internal ConfigEntry<KeyCode> MenuKey;
     internal ConfigEntry<KeyCode> FreeCamKey;
     internal ConfigEntry<bool> AllowWorldCheats;
+    internal ConfigEntry<bool> FreeCursor;
 
     public override void Load()
     {
@@ -36,6 +37,10 @@ public class Plugin : BasePlugin
         AllowWorldCheats = Config.Bind("Safety", "AllowWorldCheats", true,
             "Enables cheats that mutate shared world state (prop spawning, train position). " +
             "These affect everyone in the lobby - set false to hide them.");
+
+        FreeCursor = Config.Bind("General", "FreeCursorWhenOpen", true,
+            "Unlock and show the mouse cursor while the menu is open, so its controls " +
+            "are clickable. Your previous cursor state is restored when it closes.");
 
         // MonoBehaviours must be registered with the IL2CPP domain before Unity
         // will accept them via AddComponent.

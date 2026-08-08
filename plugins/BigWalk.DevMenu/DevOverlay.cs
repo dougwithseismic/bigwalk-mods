@@ -20,6 +20,8 @@ public class DevOverlay : MonoBehaviour
     private enum Tab { Player, Voice, Proximity, Camera, World }
 
     private bool _visible;
+    private CursorLockMode _priorLockState = CursorLockMode.Locked;
+    private bool _priorCursorVisible;
     private Rect _window = new Rect(24f, 24f, 520f, 620f);
     private Vector2 _scroll;
     private Tab _tab = Tab.Player;
@@ -47,15 +49,47 @@ public class DevOverlay : MonoBehaviour
     private void Update()
     {
         if (Input.GetKeyDown(Plugin.Instance.MenuKey.Value))
-            _visible = !_visible;
+            SetVisible(!_visible);
 
         if (Input.GetKeyDown(Plugin.Instance.FreeCamKey.Value))
             ToggleFreeCam();
+
+        // The game re-locks the cursor every frame while you're playing, so a
+        // one-shot unlock on open gets immediately undone. Reassert it.
+        if (_visible && Plugin.Instance.FreeCursor.Value)
+        {
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+        }
 
         if (_visible && Time.unscaledTime >= _nextRefresh)
         {
             _nextRefresh = Time.unscaledTime + RefreshInterval;
             Refresh();
+        }
+    }
+
+    /// <summary>
+    /// Opens/closes the overlay, taking the cursor with it. The previous lock state
+    /// is captured on open and put back on close, so we hand control back to whatever
+    /// the game was doing rather than guessing it wanted the cursor locked.
+    /// </summary>
+    private void SetVisible(bool visible)
+    {
+        if (visible == _visible) return;
+        _visible = visible;
+
+        if (!Plugin.Instance.FreeCursor.Value) return;
+
+        if (visible)
+        {
+            _priorLockState = Cursor.lockState;
+            _priorCursorVisible = Cursor.visible;
+        }
+        else
+        {
+            Cursor.lockState = _priorLockState;
+            Cursor.visible = _priorCursorVisible;
         }
     }
 

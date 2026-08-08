@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <AssemblyName>BigWalk.DevMenu</AssemblyName>
-    <Version>0.3.0</Version>
+    <Version>0.4.0</Version>
     <Description>Rebuilt dev menu for Big Walk: proximity-voice diagnostics, free camera, and the world cheats left in the retail build.</Description>
   </PropertyGroup>
 
