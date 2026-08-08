@@ -15,7 +15,7 @@ namespace BigWalk.PublicLobbies;
 /// Note the lobby stack lives in Mirror.Transports.dll, not Assembly-CSharp - the
 /// game vendored the EOS transport sample and grew EOSLobbyManager inside it.
 /// </summary>
-[BepInPlugin(Guid, "Big Walk — Public Lobbies", "0.1.0")]
+[BepInPlugin(Guid, "Better Public Lobbies", "1.0.0")]
 public class Plugin : BasePlugin
 {
     public const string Guid = "com.bigwalk.publiclobbies";

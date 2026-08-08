@@ -3,11 +3,15 @@
     Builds all Big Walk plugins and (optionally) deploys them into the game.
 .PARAMETER Deploy
     Copy the built DLLs into BepInEx\plugins afterwards. Requires the game to be closed.
+.PARAMETER Only
+    Build just the plugins whose project name matches this wildcard, so work in progress
+    on one plugin does not block building or packaging another.
 #>
 [CmdletBinding()]
 param(
     [switch]$Deploy,
-    [string]$Configuration = 'Release'
+    [string]$Configuration = 'Release',
+    [string]$Only
 )
 
 Set-StrictMode -Version Latest
@@ -26,7 +30,8 @@ $repo = Split-Path $PSScriptRoot -Parent
 $game = Get-BigWalkPath
 
 $projects = Get-ChildItem (Join-Path $repo 'plugins') -Recurse -Filter '*.csproj'
-if (-not $projects) { throw "No plugin projects found under $repo\plugins." }
+if ($Only) { $projects = $projects | Where-Object { $_.BaseName -like "*$Only*" } }
+if (-not $projects) { throw "No plugin projects found under $repo\plugins matching '$Only'." }
 
 foreach ($proj in $projects) {
     Write-Host "Building $($proj.BaseName)..."

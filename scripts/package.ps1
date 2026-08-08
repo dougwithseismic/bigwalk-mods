@@ -7,12 +7,16 @@
     folder - so plugin DLLs go under BepInEx\plugins\.
 .PARAMETER Author
     Thunderstore team/author name that will own the package.
+.PARAMETER Only
+    Package just the plugins whose project name matches this wildcard, so work in
+    progress on one plugin does not block releasing another.
 #>
 [CmdletBinding()]
 param(
     [string]$Author = 'n0__name',
     [string]$Configuration = 'Release',
-    [string]$WebsiteUrl = 'https://github.com/dougwithseismic/bigwalk-mods'
+    [string]$WebsiteUrl = 'https://github.com/dougwithseismic/bigwalk-mods',
+    [string]$Only
 )
 
 Set-StrictMode -Version Latest
@@ -23,7 +27,7 @@ $repo = Split-Path $PSScriptRoot -Parent
 $dist = Join-Path $repo 'dist'
 New-Item -ItemType Directory -Force $dist | Out-Null
 
-& "$PSScriptRoot\build.ps1" -Configuration $Configuration
+& "$PSScriptRoot\build.ps1" -Configuration $Configuration -Only $Only
 
 # The big-walk community's loader package. Mod managers read this and install the
 # loader for the user, so it must be the exact "Team-Package-1.2.3" form.
@@ -33,20 +37,31 @@ New-Item -ItemType Directory -Force $dist | Out-Null
 # assuming 30 bleeding-edge builds apart are interchangeable.
 $dependencies = @('BepInEx-BepInExPack_IL2CPP-6.0.755')
 
-foreach ($proj in Get-ChildItem (Join-Path $repo 'plugins') -Recurse -Filter '*.csproj') {
+$projects = Get-ChildItem (Join-Path $repo 'plugins') -Recurse -Filter '*.csproj'
+if ($Only) { $projects = $projects | Where-Object { $_.BaseName -like "*$Only*" } }
+
+foreach ($proj in $projects) {
     [xml]$xml = Get-Content $proj.FullName
     $props = $xml.Project.PropertyGroup
 
     $assembly = ($props.AssemblyName    | Where-Object { $_ }) -as [string]
     $version  = ($props.Version         | Where-Object { $_ }) -as [string]
     $desc     = ($props.Description     | Where-Object { $_ }) -as [string]
+    # Looked up by XPath rather than property access: most plugins do not define it,
+    # and Set-StrictMode makes a missing property a hard error.
+    $pkgNode  = $xml.SelectSingleNode('//PackageName')
+    $pkg      = if ($pkgNode) { $pkgNode.InnerText.Trim() } else { $null }
 
     if (-not $assembly) { Write-Warning "Skipping $($proj.Name): no AssemblyName."; continue }
     if (-not $version)  { $version = '0.1.0' }
     if (-not $desc)     { $desc = "$assembly for Big Walk." }
 
+    # A plugin may publish under a different name than its assembly - the assembly
+    # name is baked into the DLL and the config file path, so it is not free to
+    # change, while the storefront name is chosen for readability.
     # Thunderstore package names allow only alphanumerics and underscores.
-    $pkgName = $assembly -replace '[^a-zA-Z0-9_]', '_'
+    if (-not $pkg) { $pkg = $assembly }
+    $pkgName = $pkg -replace '[^a-zA-Z0-9_]', '_'
 
     $stage = Join-Path $dist "stage\$pkgName"
     if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
@@ -73,6 +88,10 @@ foreach ($proj in Get-ChildItem (Join-Path $repo 'plugins') -Recurse -Filter '*.
     } else {
         "# $assembly`n`n$desc`n" | Set-Content "$stage\README.md" -Encoding UTF8
     }
+
+    # Thunderstore renders CHANGELOG.md as its own tab when the package includes one.
+    $changelog = Join-Path $proj.Directory 'CHANGELOG.md'
+    if (Test-Path $changelog) { Copy-Item $changelog "$stage\CHANGELOG.md" -Force }
 
     # Ship real art when a plugin provides icon.png; fall back to a generated placeholder.
     $ownIcon = Join-Path $proj.Directory 'icon.png'

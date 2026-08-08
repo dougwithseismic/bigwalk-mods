@@ -2,8 +2,9 @@
 
   <PropertyGroup>
     <AssemblyName>BigWalk.PublicLobbies</AssemblyName>
-    <Version>0.1.0</Version>
-    <Description>Native public lobby browser for Big Walk's join menu.</Description>
+    <PackageName>Better_Public_Lobbies</PackageName>
+    <Version>1.0.0</Version>
+    <Description>Browse every public Big Walk lobby from inside the Join Game menu. Live player counts, search by world or host, sort by how busy a room is, and hide full games - styled to match the menu it lives in.</Description>
   </PropertyGroup>
 
   <!--
