@@ -11,7 +11,7 @@ namespace BigWalk.SkipIntro;
 /// path rather than by disabling the menu objects, so whatever bookkeeping those
 /// methods do still happens.
 /// </summary>
-[BepInPlugin(Guid, "Big Walk — Skip Intro", "1.0.0")]
+[BepInPlugin(Guid, "Big Walk — Skip Intro", "1.0.1")]
 public class Plugin : BasePlugin
 {
     public const string Guid = "com.bigwalk.skipintro";

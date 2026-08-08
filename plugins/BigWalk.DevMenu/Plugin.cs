@@ -12,7 +12,7 @@ namespace BigWalk.DevMenu;
 /// nothing constructs DevMenuRow). This plugin supplies a new front end for the
 /// parts that survived, plus proximity-voice diagnostics.
 /// </summary>
-[BepInPlugin(Guid, "Big Walk — Dev Menu", "0.2.0")]
+[BepInPlugin(Guid, "Big Walk — Dev Menu", "0.3.0")]
 public class Plugin : BasePlugin
 {
     public const string Guid = "com.bigwalk.devmenu";

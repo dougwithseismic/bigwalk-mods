@@ -15,7 +15,7 @@ public class DevOverlay : MonoBehaviour
 {
     public DevOverlay(IntPtr ptr) : base(ptr) { }
 
-    private enum Tab { Proximity, Camera, World }
+    private enum Tab { Proximity, Voice, Camera, World }
 
     private bool _visible;
     private Rect _window = new Rect(24f, 24f, 470f, 560f);
@@ -90,6 +90,7 @@ public class DevOverlay : MonoBehaviour
     {
         GUILayout.BeginHorizontal();
         if (GUILayout.Toggle(_tab == Tab.Proximity, "Proximity", GUI.skin.button)) _tab = Tab.Proximity;
+        if (GUILayout.Toggle(_tab == Tab.Voice, "Voice", GUI.skin.button)) _tab = Tab.Voice;
         if (GUILayout.Toggle(_tab == Tab.Camera, "Camera", GUI.skin.button)) _tab = Tab.Camera;
         if (GUILayout.Toggle(_tab == Tab.World, "World", GUI.skin.button)) _tab = Tab.World;
         GUILayout.EndHorizontal();
@@ -106,6 +107,7 @@ public class DevOverlay : MonoBehaviour
         switch (_tab)
         {
             case Tab.Proximity: DrawProximity(); break;
+            case Tab.Voice:     DrawVoice();     break;
             case Tab.Camera:    DrawCamera();    break;
             case Tab.World:     DrawWorld();     break;
         }
@@ -209,6 +211,63 @@ public class DevOverlay : MonoBehaviour
                 sb.Append($"  {Vector3.Distance(me, p.Position):0.#}m");
             GUILayout.Label(sb.ToString());
         }
+    }
+
+    // ── Voice ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Reads the game's own voice attenuation, which is NOT plain Unity AudioSource
+    /// rolloff: PlayerVoicePlaybackControl evaluates AttenuationCurve (plus filter and
+    /// spatial curves) per listener, client-side. Where that curve reaches zero is the
+    /// real audible ceiling, and it decides whether a host-only routing mod can work
+    /// at all - the host cannot change a vanilla listener's curve.
+    /// </summary>
+    private void DrawVoice()
+    {
+        var controls = PlayerVoicePlaybackControl.controls;
+        if (controls == null || controls.Count == 0)
+        {
+            GUILayout.Label("No PlayerVoicePlaybackControl instances.");
+            GUILayout.Label("(Join a world with another player.)");
+            return;
+        }
+
+        GUILayout.Label($"── Voice playback ({controls.Count}) ──");
+
+        foreach (var c in controls)
+        {
+            if (c == null) continue;
+
+            var who = c.playerCharacter != null ? c.playerCharacter.name : "<no character>";
+            GUILayout.Space(4f);
+            GUILayout.Label($"{who}   2D={c.TwoDMode}");
+            DescribeCurve("attenuation", c.AttenuationCurve);
+            DescribeCurve("spatialVol", c.SpatialVolCurve);
+            DescribeCurve("filterDist", c.FilterDistanceCurve);
+        }
+    }
+
+    private void DescribeCurve(string label, AnimationCurve curve)
+    {
+        if (curve == null) { GUILayout.Label($"    {label}: <null>"); return; }
+
+        var keys = curve.keys;
+        if (keys == null || keys.Length == 0) { GUILayout.Label($"    {label}: <empty>"); return; }
+
+        float first = keys[0].time;
+        float last = keys[keys.Length - 1].time;
+
+        // The distance at which the curve first reaches (near) zero is the number
+        // that actually matters - that is where a voice stops being audible.
+        float silentAt = -1f;
+        for (int i = 0; i < keys.Length; i++)
+        {
+            if (Mathf.Abs(keys[i].value) < 0.0001f) { silentAt = keys[i].time; break; }
+        }
+
+        var span = $"{first:0.#}..{last:0.#}";
+        var silence = silentAt >= 0f ? $"  zero@{silentAt:0.#}" : "  (never zero)";
+        GUILayout.Label($"    {label}: {keys.Length} keys  x={span}{silence}");
     }
 
     // ── Camera ─────────────────────────────────────────────────────────────
