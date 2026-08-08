@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>BigWalk.PublicLobbies</AssemblyName>
+    <Version>0.1.0</Version>
+    <Description>Native public lobby browser for Big Walk's join menu.</Description>
+  </PropertyGroup>
+
+  <!--
+    Beyond the shared set in Directory.Build.props, this plugin needs the EOS SDK
+    and Mirror.Transports (which is where EOSLobbyManager / LobbyInfo actually live,
+    despite the name), plus TMP and UniTask for the native menu work.
+  -->
+  <ItemGroup Label="Lobby stack">
+    <Reference Include="Mirror.Transports"><HintPath>$(Interop)\Mirror.Transports.dll</HintPath></Reference>
+    <Reference Include="com.Epic.OnlineServices"><HintPath>$(Interop)\com.Epic.OnlineServices.dll</HintPath></Reference>
+    <!-- PlatformManager.Platform, reachable via LobbyInfo.platform. -->
+    <Reference Include="com.playeveryware.eos.core"><HintPath>$(Interop)\com.playeveryware.eos.core.dll</HintPath></Reference>
+    <Reference Include="UniTask"><HintPath>$(Interop)\UniTask.dll</HintPath></Reference>
+    <Reference Include="Unity.TextMeshPro"><HintPath>$(Interop)\Unity.TextMeshPro.dll</HintPath></Reference>
+    <!-- TextAnchor, used by the layout groups we add to the controls row. -->
+    <Reference Include="UnityEngine.TextRenderingModule"><HintPath>$(Interop)\UnityEngine.TextRenderingModule.dll</HintPath></Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Update="@(Reference)"><Private>false</Private></Reference>
+  </ItemGroup>
+
+</Project>
