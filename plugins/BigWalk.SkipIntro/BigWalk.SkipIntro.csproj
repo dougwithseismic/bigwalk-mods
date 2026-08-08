@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>BigWalk.SkipIntro</AssemblyName>
+    <Version>1.0.0</Version>
+    <Description>Skips the splash screen and microphone check on startup.</Description>
+  </PropertyGroup>
+
+</Project>

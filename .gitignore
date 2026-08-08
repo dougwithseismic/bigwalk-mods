@@ -1,0 +1,26 @@
+# Build output
+bin/
+obj/
+dist/
+
+# Vendored loader packs are large binaries; re-download via docs/modding-guide.md
+vendor/*.zip
+
+# Decompiled game source. Never commit this - it is the game's copyrighted code,
+# it is regenerable with Cpp2IL, and it is enormous.
+gamesrc/
+cpp2il_out/
+*.dump
+
+# Tools
+tools/
+
+# IDE
+.vs/
+.idea/
+*.user
+*.suo
+
+# OS
+Thumbs.db
+desktop.ini
