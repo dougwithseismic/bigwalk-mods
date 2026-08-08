@@ -2,8 +2,16 @@
 
 BepInEx (IL2CPP) mods for **Big Walk** — Unity 6000.3.17f1, Mirror networking, Dissonance voice.
 
+Published on Thunderstore: <https://thunderstore.io/c/big-walk/>
+
 See **[docs/modding-guide.md](docs/modding-guide.md)** for how the game is built, how to dump
-it, and the reverse-engineering findings behind these mods.
+it, and the reverse-engineering findings behind these mods — including the Dissonance
+proximity-voice grid maths, recovered from disassembly, and why a client-side-only range
+change silences you instead of extending your reach.
+
+> Unofficial and fan-made. Not affiliated with House House. No game assets or decompiled
+> game code are included here — see [docs/modding-guide.md](docs/modding-guide.md) to
+> regenerate what you need locally.
 
 ## Quick start
 
@@ -70,7 +78,7 @@ Icons are generated placeholders — replace them with real art before publishin
 | --- | --- |
 | BepInEx **6.0.755** (Thunderstore pack) on Unity 6.3 / metadata v39 | **Working** |
 | `install` / `uninstall` / `build` / `package` / `new-mod` scripts | Working |
-| `BigWalk.SkipIntro` | **Both skips confirmed in game on 6.0.755.** Packaged, ready to publish |
+| `BigWalk.SkipIntro` | **Published** — [`n0__name-BigWalk_SkipIntro`](https://thunderstore.io/c/big-walk/p/n0__name/BigWalk_SkipIntro/) |
 | `BigWalk.DevMenu` | Loads on 6.0.755. Internal tool — not for release |
 | Proximity range increase | Blocked on route A vs B (see guide §4) |
 

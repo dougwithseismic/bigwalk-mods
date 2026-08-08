@@ -10,8 +10,9 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Author = 'withseismic',
-    [string]$Configuration = 'Release'
+    [string]$Author = 'n0__name',
+    [string]$Configuration = 'Release',
+    [string]$WebsiteUrl = 'https://github.com/dougwithseismic/bigwalk-mods'
 )
 
 Set-StrictMode -Version Latest
@@ -61,7 +62,7 @@ foreach ($proj in Get-ChildItem (Join-Path $repo 'plugins') -Recurse -Filter '*.
     [ordered]@{
         name             = $pkgName
         version_number   = $version
-        website_url      = ''
+        website_url      = $WebsiteUrl
         description      = $desc
         dependencies     = $dependencies
     } | ConvertTo-Json -Depth 4 | Set-Content "$stage\manifest.json" -Encoding UTF8
