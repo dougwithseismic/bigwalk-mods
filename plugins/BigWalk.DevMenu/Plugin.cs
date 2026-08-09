@@ -12,7 +12,7 @@ namespace BigWalk.DevMenu;
 /// nothing constructs DevMenuRow). This plugin supplies a new front end for the
 /// parts that survived, plus proximity-voice diagnostics.
 /// </summary>
-[BepInPlugin(Guid, "Big Walk — Dev Menu", "0.4.0")]
+[BepInPlugin(Guid, "Big Walk — Dev Menu", "0.6.2")]
 public class Plugin : BasePlugin
 {
     public const string Guid = "com.bigwalk.devmenu";
@@ -24,6 +24,12 @@ public class Plugin : BasePlugin
     internal ConfigEntry<KeyCode> FreeCamKey;
     internal ConfigEntry<bool> AllowWorldCheats;
     internal ConfigEntry<bool> FreeCursor;
+    internal ConfigEntry<KeyCode> SpeakerIconsKey;
+    internal ConfigEntry<bool> SpeakerIcons;
+    internal ConfigEntry<bool> SpeakerMarkers3D;
+    internal ConfigEntry<bool> MarkersThroughWalls;
+    internal ConfigEntry<bool> MarkerLights;
+    internal ConfigEntry<bool> MapPins;
 
     public override void Load()
     {
@@ -41,6 +47,28 @@ public class Plugin : BasePlugin
         FreeCursor = Config.Bind("General", "FreeCursorWhenOpen", true,
             "Unlock and show the mouse cursor while the menu is open, so its controls " +
             "are clickable. Your previous cursor state is restored when it closes.");
+
+        SpeakerIconsKey = Config.Bind("Keys", "SpeakerIconsKey", KeyCode.F4,
+            "Toggles the on-screen speaker icons over players who are talking.");
+        SpeakerIcons = Config.Bind("Voice", "SpeakerIcons", false,
+            "Draw a speaker icon over each talking player, coloured green (near) to " +
+            "red (edge of audibility) and faded by distance. Off-screen speakers are " +
+            "clamped to the screen edge.");
+
+        SpeakerMarkers3D = Config.Bind("Voice", "SpeakerMarkers3D", false,
+            "Float an in-world marker over the head of whoever is talking, coloured " +
+            "green (near) to red (edge of audibility). Includes a point light, which " +
+            "is also the fallback if no usable shader survived the build's stripping.");
+        MarkersThroughWalls = Config.Bind("Voice", "MarkersThroughWalls", true,
+            "Draw in-world speaker markers through terrain and geometry.");
+        MarkerLights = Config.Bind("Voice", "MarkerLights", false,
+            "Add a point light to each in-world speaker marker. Off by default: " +
+            "realtime lights are the expensive part of the effect. Forced on anyway " +
+            "if no usable shader was found, since the light is then the only visual.");
+        MapPins = Config.Bind("Voice", "MapPins", false,
+            "Pin every tracked player onto the in-game paper map, lighting up while " +
+            "they talk. Needs the map prop loaded; the world-to-map transform is " +
+            "fitted from GourdMap's own landmark anchors.");
 
         // MonoBehaviours must be registered with the IL2CPP domain before Unity
         // will accept them via AddComponent.

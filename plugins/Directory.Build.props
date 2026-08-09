@@ -43,6 +43,7 @@
     <Reference Include="DissonanceVoip"><HintPath>$(Interop)\DissonanceVoip.dll</HintPath></Reference>
     <Reference Include="Assembly-CSharp"><HintPath>$(Interop)\Assembly-CSharp.dll</HintPath></Reference>
     <Reference Include="Mirror"><HintPath>$(Interop)\Mirror.dll</HintPath></Reference>
+    <Reference Include="AudioSystem"><HintPath>$(Interop)\AudioSystem.dll</HintPath></Reference>
   </ItemGroup>
 
   <ItemGroup>

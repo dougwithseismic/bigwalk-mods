@@ -32,6 +32,10 @@ public class DevOverlay : MonoBehaviour
     // is plenty for a diagnostic readout.
     private const float RefreshInterval = 1f;
     private float _nextRefresh;
+    private float _nextScaleTick;
+    private string _rangeText;
+    private bool _markersWereOn;
+    private bool _pinsWereOn;
 
     private VoiceProximityBroadcastTrigger _broadcast;
     private VoiceProximityReceiptTrigger _receipt;
@@ -54,6 +58,9 @@ public class DevOverlay : MonoBehaviour
         if (Input.GetKeyDown(Plugin.Instance.FreeCamKey.Value))
             ToggleFreeCam();
 
+        if (Input.GetKeyDown(Plugin.Instance.SpeakerIconsKey.Value))
+            Plugin.Instance.SpeakerIcons.Value = !Plugin.Instance.SpeakerIcons.Value;
+
         // The game re-locks the cursor every frame while you're playing, so a
         // one-shot unlock on open gets immediately undone. Reassert it.
         if (_visible && Plugin.Instance.FreeCursor.Value)
@@ -66,6 +73,27 @@ public class DevOverlay : MonoBehaviour
         {
             _nextRefresh = Time.unscaledTime + RefreshInterval;
             Refresh();
+        }
+
+        // In-world markers have to track heads every frame, so they run here rather
+        // than on the once-a-second diagnostic budget. Toggling off tears them down
+        // instead of leaving orphaned GameObjects in the scene.
+        if (Plugin.Instance.SpeakerMarkers3D.Value || SpeakerMarkers.TestActive) SpeakerMarkers.Tick();
+        else if (SpeakerMarkers.Active > 0 || _markersWereOn) { SpeakerMarkers.Clear(); }
+        _markersWereOn = Plugin.Instance.SpeakerMarkers3D.Value;
+
+        if (Plugin.Instance.MapPins.Value) MapPins.Tick();
+        else if (_pinsWereOn) { MapPins.Clear(); }
+        _pinsWereOn = Plugin.Instance.MapPins.Value;
+
+        // Voice controls spawn as players join, and a fresh one starts on vanilla
+        // curves - so the scale has to be reasserted whether the menu is open or
+        // not. Runs on the same once-a-second budget.
+        if (VoiceRangeScaler.Scale > 1f && Time.unscaledTime >= _nextScaleTick)
+        {
+            _nextScaleTick = Time.unscaledTime + RefreshInterval;
+            try { VoiceRangeScaler.Apply(); }
+            catch (Exception e) { Plugin.Trace.LogError($"Voice range apply failed: {e}"); }
         }
     }
 
@@ -131,6 +159,12 @@ public class DevOverlay : MonoBehaviour
 
     private void OnGUI()
     {
+        // Indicators are deliberately outside the _visible gate - they are a HUD
+        // element, not part of the menu, and Repaint-only because DrawTexture in
+        // a layout pass just burns frames.
+        if (Plugin.Instance.SpeakerIcons.Value && Event.current.type == EventType.Repaint)
+            SpeakerIndicators.Draw();
+
         if (!_visible) return;
         _window = GUI.Window(0x8127, _window, (GUI.WindowFunction)DrawWindow, "Big Walk — Dev Menu");
     }
@@ -277,6 +311,67 @@ public class DevOverlay : MonoBehaviour
             });
 
         GUILayout.Space(8f);
+        DrawRangeScaler();
+
+        GUILayout.Space(8f);
+        GUILayout.Label("── Speaker icons ──");
+        bool icons = GUILayout.Toggle(Plugin.Instance.SpeakerIcons.Value,
+            $"Show who's talking ({Plugin.Instance.SpeakerIconsKey.Value})");
+        if (icons != Plugin.Instance.SpeakerIcons.Value)
+            Plugin.Instance.SpeakerIcons.Value = icons;
+        GUILayout.Label("Green = close, red = edge of audibility; fades with distance.");
+        GUILayout.Label("Off-screen speakers clamp to the screen edge.");
+
+        GUILayout.Space(6f);
+        bool markers = GUILayout.Toggle(Plugin.Instance.SpeakerMarkers3D.Value, "In-world markers over heads");
+        if (markers != Plugin.Instance.SpeakerMarkers3D.Value)
+            Plugin.Instance.SpeakerMarkers3D.Value = markers;
+
+        bool through = GUILayout.Toggle(Plugin.Instance.MarkersThroughWalls.Value, "  └ draw through walls");
+        if (through != Plugin.Instance.MarkersThroughWalls.Value)
+        {
+            Plugin.Instance.MarkersThroughWalls.Value = through;
+            // Depth testing is baked into the material, so existing markers have to
+            // be rebuilt for the change to take.
+            SpeakerMarkers.Clear();
+        }
+
+        bool lights = GUILayout.Toggle(Plugin.Instance.MarkerLights.Value, "  └ point lights (costs FPS)");
+        if (lights != Plugin.Instance.MarkerLights.Value)
+        {
+            Plugin.Instance.MarkerLights.Value = lights;
+            SpeakerMarkers.Clear();
+        }
+
+        GUILayout.Label($"    shader: {MarkerVisuals.ResolvedShader}");
+        GUILayout.Label($"    live markers: {SpeakerMarkers.Active}");
+        GUILayout.Label($"    built: {SpeakerMarkers.Diagnostic}");
+        GUILayout.Label($"    auto-calibrated peak ARV: {SpeakerMarkers.ObservedPeak:0.######}");
+        GUILayout.Label($"    path: {SpeakerMarkers.SkipReport}");
+
+        bool force = GUILayout.Toggle(SpeakerMarkers.ForceShow, "  └ force show (ignore who's talking)");
+        if (force != SpeakerMarkers.ForceShow) SpeakerMarkers.ForceShow = force;
+
+        if (GUILayout.Button(SpeakerMarkers.TestActive
+                ? "Stop marker self-test"
+                : "Self-test: put a marker in front of me"))
+            Guard(() =>
+            {
+                SpeakerMarkers.ToggleTest();
+                _status = SpeakerMarkers.TestActive
+                    ? "Test marker spawned 3m ahead — colour-cycling quad + light."
+                    : "Test marker removed.";
+            });
+
+        GUILayout.Space(6f);
+        bool pins = GUILayout.Toggle(Plugin.Instance.MapPins.Value, "Player pins on the paper map");
+        if (pins != Plugin.Instance.MapPins.Value)
+            Plugin.Instance.MapPins.Value = pins;
+
+        GUILayout.Label($"    fit: {MapPins.Diagnostic}");
+        GUILayout.Label($"    live pins: {MapPins.Active}");
+
+        GUILayout.Space(8f);
 
         var controls = PlayerVoicePlaybackControl.controls;
         if (controls == null || controls.Count == 0)
@@ -304,10 +399,87 @@ public class DevOverlay : MonoBehaviour
             }
             GUILayout.EndHorizontal();
 
+            // The live amplitude, because TalkThreshold and BarGain were guesses
+            // and markers that never light up are almost certainly those guesses
+            // being wrong rather than anything failing to render.
+            GUILayout.Label($"    ARV smoothed={c.SmoothedARV:0.######}  peak={c.PeakARV:0.######}");
+
             DescribeCurve("attenuation", c.AttenuationCurve);
             DescribeCurve("spatialVol", c.SpatialVolCurve);
             DescribeCurve("filterDist", c.FilterDistanceCurve);
         }
+    }
+
+    /// <summary>
+    /// The global range multiplier. Unlike the Proximity tab's Range nudges this
+    /// is purely local - it rescales the client-side attenuation curves, so no
+    /// other client's view of the room grid changes and nothing desyncs.
+    /// </summary>
+    private void DrawRangeScaler()
+    {
+        GUILayout.Label("── Global proximity range ──");
+        GUILayout.Label("Client-side only: stretches the attenuation curves so the");
+        GUILayout.Label("volume you used to hear at d you now hear at d × scale.");
+        GUILayout.Label("Safe with vanilla players — nothing is sent to anyone.");
+
+        // Logarithmic, because the useful range is not evenly distributed: the
+        // difference between x1 and x1.2 is audible and the difference between
+        // x15 and x16 is not. A linear 1..20 slider spent 95% of its travel on
+        // the half nobody needs and made small values unselectable.
+        float current = VoiceRangeScaler.Scale;
+        float logMax = Mathf.Log(RangeMax);
+        float norm = Mathf.Log(Mathf.Max(current, 1f)) / logMax;
+
+        GUILayout.BeginHorizontal();
+        GUILayout.Label("range ×", GUILayout.Width(90f));
+        float moved = GUILayout.HorizontalSlider(norm, 0f, 1f, GUILayout.Width(240f));
+        GUILayout.Label(current.ToString("0.###"), GUILayout.Width(60f));
+        GUILayout.EndHorizontal();
+
+        if (!Mathf.Approximately(moved, norm))
+            SetScale(Mathf.Exp(moved * logMax));
+
+        // Nudges, for when even a log slider is coarser than the ear.
+        GUILayout.BeginHorizontal();
+        GUILayout.Label("", GUILayout.Width(90f));
+        if (GUILayout.Button("−0.10", GUILayout.Width(56f))) SetScale(current - 0.10f);
+        if (GUILayout.Button("−0.01", GUILayout.Width(56f))) SetScale(current - 0.01f);
+        if (GUILayout.Button("+0.01", GUILayout.Width(56f))) SetScale(current + 0.01f);
+        if (GUILayout.Button("+0.10", GUILayout.Width(56f))) SetScale(current + 0.10f);
+        GUILayout.EndHorizontal();
+
+        // And a typed value, for when you know the number you want.
+        GUILayout.BeginHorizontal();
+        GUILayout.Label("set exactly", GUILayout.Width(90f));
+        _rangeText = GUILayout.TextField(_rangeText ?? current.ToString("0.###"), GUILayout.Width(80f));
+        if (GUILayout.Button("Apply", GUILayout.Width(60f)))
+        {
+            if (float.TryParse(_rangeText, out float typed)) SetScale(typed);
+            else _status = $"'{_rangeText}' is not a number.";
+        }
+        if (GUILayout.Button("Reset ×1", GUILayout.Width(80f)))
+        {
+            Guard(() =>
+            {
+                VoiceRangeScaler.Reset();
+                _rangeText = "1";
+                _status = "Voice range restored to vanilla.";
+            });
+        }
+        GUILayout.EndHorizontal();
+    }
+
+    private const float RangeMax = 20f;
+
+    private void SetScale(float value)
+    {
+        Guard(() =>
+        {
+            VoiceRangeScaler.Scale = value;
+            _rangeText = VoiceRangeScaler.Scale.ToString("0.###");
+            VoiceRangeScaler.Apply();
+            _status = $"Voice range ×{VoiceRangeScaler.Scale:0.###} on {VoiceRangeScaler.LastApplied} voice(s).";
+        });
     }
 
     private void DescribeCurve(string label, AnimationCurve curve)
