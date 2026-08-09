@@ -93,6 +93,11 @@ foreach ($proj in $projects) {
     $changelog = Join-Path $proj.Directory 'CHANGELOG.md'
     if (Test-Path $changelog) { Copy-Item $changelog "$stage\CHANGELOG.md" -Force }
 
+    # Keep an optional UI screenshot alongside the README for repository mirrors
+    # and release tooling that can serve package assets directly.
+    $screenshot = Join-Path $proj.Directory 'screenshot.png'
+    if (Test-Path $screenshot) { Copy-Item $screenshot "$stage\screenshot.png" -Force }
+
     # Ship real art when a plugin provides icon.png; fall back to a generated placeholder.
     $ownIcon = Join-Path $proj.Directory 'icon.png'
     if (Test-Path $ownIcon) {
